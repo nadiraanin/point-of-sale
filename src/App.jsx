@@ -12,6 +12,14 @@ import {
 } from "react-bootstrap";
 
 export default function App() {
+  const initialProducts = useMemo(
+    () => [
+      { id: 1, name: "Makanan", description: "Produk makanan siap saji" },
+      { id: 2, name: "Minuman", description: "Aneka minuman dingin & hangat" },
+    ],
+    []
+  );
+  // state produk dengan inisialisasi dari localStorage
   const [products, setProducts] = useState(() => {
     const saved = localStorage.getItem("products");
     return saved ? JSON.parse(saved) : [];
@@ -19,18 +27,19 @@ export default function App() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [errors, setErrors] = useState({});
+  const [editingId, setEditingId] = useState(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastVariant, setToastVariant] = useState("success"); // 'success' | 'danger'
+  // tambahan state untuk fitur lengkap
   const [price, setPrice] = useState("");
   const [category, setCategory] = useState("");
   const [releaseDate, setReleaseDate] = useState("");
   const [stock, setStock] = useState(0);
   const [isActive, setIsActive] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [editingId, setEditingId] = useState(null);
 
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
-  const [toastVariant, setToastVariant] = useState("success");
-
+  // simpan data ke localStorage
   useEffect(() => {
     localStorage.setItem("products", JSON.stringify(products));
   }, [products]);
@@ -40,12 +49,25 @@ export default function App() {
     const trimmedName = name.trim();
 
     if (!trimmedName) {
-      newErrors.name = "Nama produk wajib diisi.";
+      newErrors.name = "Nama Produk wajib diisi.";
+    } else if (trimmedName.length < 3) {
+      newErrors.name = "Minimal 3 karakter.";
     } else if (trimmedName.length > 100) {
       newErrors.name = "Maksimal 100 karakter.";
+    } else {
+      const isDuplicate = products.some(
+        (c) =>
+          c.name.toLowerCase() === trimmedName.toLowerCase() &&
+          c.id !== editingId
+      );
+      if (isDuplicate) {
+        newErrors.name = "Nama Produk sudah ada.";
+      }
     }
 
-    if (description.trim().length < 20) {
+    if (description.length > 200) {
+      newErrors.description = "Deskripsi maksimal 200 karakter.";
+    } else if (description.length < 20) {
       newErrors.description = "Deskripsi minimal 20 karakter.";
     }
 
@@ -104,39 +126,51 @@ export default function App() {
       return;
     }
 
-    const newProduct = {
-      id: editingId ?? Date.now(),
-      name: name.trim(),
-      description: description.trim(),
-      price: parseFloat(price),
-      category,
-      releaseDate,
-      stock: parseInt(stock),
-      isActive,
-    };
-
     if (editingId === null) {
+      const newProduct = {
+        id: Date.now(),
+        name: name.trim(),
+        description: description.trim(),
+        price: Number(price),
+        category,
+        releaseDate,
+        stock: Number(stock),
+        isActive,
+      };
       setProducts((prev) => [newProduct, ...prev]);
+      resetForm();
       showToastMsg("Produk berhasil ditambahkan.", "success");
     } else {
       setProducts((prev) =>
-        prev.map((p) => (p.id === editingId ? newProduct : p))
+        prev.map((p) =>
+          p.id === editingId
+            ? {
+                ...p,
+                name: name.trim(),
+                description: description.trim(),
+                price: Number(price),
+                category,
+                releaseDate,
+                stock: Number(stock),
+                isActive,
+              }
+            : p
+        )
       );
+      resetForm();
       showToastMsg("Produk berhasil diperbarui.", "success");
     }
-
-    resetForm();
   };
 
   const handleEdit = (prod) => {
     setEditingId(prod.id);
     setName(prod.name);
-    setDescription(prod.description);
-    setPrice(prod.price);
-    setCategory(prod.category);
-    setReleaseDate(prod.releaseDate);
-    setStock(prod.stock);
-    setIsActive(prod.isActive);
+    setDescription(prod.description || "");
+    setPrice(prod.price || "");
+    setCategory(prod.category || "");
+    setReleaseDate(prod.releaseDate || "");
+    setStock(prod.stock || 0);
+    setIsActive(prod.isActive || false);
     setErrors({});
   };
 
@@ -144,11 +178,13 @@ export default function App() {
     const target = products.find((p) => p.id === id);
     if (!target) return;
     if (!window.confirm(`Hapus Produk "${target.name}"?`)) return;
+
     setProducts((prev) => prev.filter((p) => p.id !== id));
     if (editingId === id) resetForm();
     showToastMsg("Produk berhasil dihapus.", "success");
   };
 
+  const descriptionCount = `${description.length}/200`;
   const isEditing = editingId !== null;
 
   return (
@@ -161,14 +197,17 @@ export default function App() {
             </Card.Header>
             <Card.Body>
               <Form onSubmit={handleSubmit} noValidate>
-                {/* Nama Produk */}
                 <Form.Group className="mb-3" controlId="productName">
                   <Form.Label>Nama Produk</Form.Label>
                   <Form.Control
                     type="text"
-                    placeholder="Nama lengkap produk"
+                    placeholder="Contoh: Sembako"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (errors.name)
+                        setErrors((prev) => ({ ...prev, name: undefined }));
+                    }}
                     isInvalid={!!errors.name}
                     maxLength={100}
                   />
@@ -177,23 +216,35 @@ export default function App() {
                   </Form.Control.Feedback>
                 </Form.Group>
 
-                {/* Deskripsi */}
                 <Form.Group className="mb-3" controlId="productDescription">
-                  <Form.Label>Deskripsi</Form.Label>
+                  <Form.Label>Deskripsi (opsional)</Form.Label>
                   <Form.Control
                     as="textarea"
                     rows={3}
-                    placeholder="Penjelasan detail produk (minimal 20 karakter)"
+                    placeholder="Tulis deskripsi Produk (maks. 200 karakter)"
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e) => {
+                      setDescription(e.target.value);
+                      if (errors.description)
+                        setErrors((prev) => ({
+                          ...prev,
+                          description: undefined,
+                        }));
+                    }}
                     isInvalid={!!errors.description}
+                    maxLength={200}
                   />
+                  <div className="d-flex justify-content-between">
+                    <Form.Text muted>
+                      Berikan deskripsi singkat Produk.
+                    </Form.Text>
+                    <Form.Text muted>{descriptionCount}</Form.Text>
+                  </div>
                   <Form.Control.Feedback type="invalid">
                     {errors.description}
                   </Form.Control.Feedback>
                 </Form.Group>
 
-                {/* Harga */}
                 <Form.Group className="mb-3" controlId="productPrice">
                   <Form.Label>Harga</Form.Label>
                   <Form.Control
@@ -209,7 +260,6 @@ export default function App() {
                   </Form.Control.Feedback>
                 </Form.Group>
 
-                {/* Kategori */}
                 <Form.Group className="mb-3" controlId="productCategory">
                   <Form.Label>Kategori</Form.Label>
                   <Form.Select
@@ -228,7 +278,6 @@ export default function App() {
                   </Form.Control.Feedback>
                 </Form.Group>
 
-                {/* Tanggal Rilis */}
                 <Form.Group className="mb-3" controlId="releaseDate">
                   <Form.Label>Tanggal Rilis</Form.Label>
                   <Form.Control
@@ -242,7 +291,6 @@ export default function App() {
                   </Form.Control.Feedback>
                 </Form.Group>
 
-                {/* Stok */}
                 <Form.Group className="mb-3" controlId="stock">
                   <Form.Label>Stok Tersedia: {stock}</Form.Label>
                   <Form.Range
@@ -253,7 +301,6 @@ export default function App() {
                   />
                 </Form.Group>
 
-                {/* Aktif */}
                 <Form.Group className="mb-3" controlId="isActive">
                   <Form.Check
                     type="switch"
@@ -271,7 +318,11 @@ export default function App() {
                     {isEditing ? "Simpan Perubahan" : "Tambah Produk"}
                   </Button>
                   {isEditing && (
-                    <Button type="button" variant="secondary" onClick={resetForm}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={resetForm}
+                    >
                       Batal
                     </Button>
                   )}
@@ -288,44 +339,65 @@ export default function App() {
               <Table striped bordered hover responsive className="mb-0">
                 <thead>
                   <tr>
-                    <th>#</th>
-                    <th>Nama</th>
-                    <th>Kategori</th>
-                    <th>Harga</th>
-                    <th>Stok</th>
+                    <th style={{ width: 60 }} className="text-center">
+                      #
+                    </th>
+                    <th className="text-center">Nama</th>
+                    <th className="text-center">Deskripsi</th>
+                    <th className="text-center">Kategori</th>
+                    <th className="text-center">Harga</th>
+                    <th className="text-center">Rilis</th>
+                    <th className="text-center">Stok</th>
                     <th>Status</th>
-                    <th>Aksi</th>
+                    <th style={{ width: 180 }} className="text-center">
+                      Aksi
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {products.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-4 text-muted">
-                        Belum ada data produk.
+                      <td colSpan={9} className="text-center py-4 text-muted">
+                        Belum ada data Produk.
                       </td>
                     </tr>
                   ) : (
-                    products.map((p, i) => (
-                      <tr key={p.id}>
-                        <td>{i + 1}</td>
-                        <td>{p.name}</td>
-                        <td>{p.category}</td>
-                        <td>Rp {p.price.toLocaleString()}</td>
-                        <td>{p.stock}</td>
-                        <td>{p.isActive ? "Aktif" : "Tidak Aktif"}</td>
+                    products.map((product, idx) => (
+                      <tr key={product.id}>
+                        <td className="text-center">{idx + 1}</td>
+                        <td>{product.name}</td>
+                        <td>{product.description}</td>
+                        <td>{product.category || "-"}</td>
                         <td>
-                          <div className="d-flex gap-2 justify-content-center">
+                          {product.price
+                            ? new Intl.NumberFormat("id-ID", {
+                                style: "currency",
+                                currency: "IDR",
+                              }).format(product.price)
+                            : "-"}
+                        </td>
+                        <td>
+                          {product.releaseDate
+                            ? new Date(product.releaseDate).toLocaleDateString(
+                                "id-ID"
+                              )
+                            : "-"}
+                        </td>
+                        <td>{product.stock}</td>
+                        <td>{product.isActive ? "Aktif" : "Tidak Aktif"}</td>
+                        <td className="text-center">
+                          <div className="d-flex justify-content-center gap-2">
                             <Button
                               size="sm"
                               variant="warning"
-                              onClick={() => handleEdit(p)}
+                              onClick={() => handleEdit(product)}
                             >
                               Edit
                             </Button>
                             <Button
                               size="sm"
                               variant="danger"
-                              onClick={() => handleDelete(p.id)}
+                              onClick={() => handleDelete(product.id)}
                             >
                               Hapus
                             </Button>
@@ -353,9 +425,7 @@ export default function App() {
             <strong className="me-auto">Notifikasi</strong>
             <small>Baru saja</small>
           </Toast.Header>
-          <Toast.Body
-            className={toastVariant === "danger" ? "text-white" : ""}
-          >
+          <Toast.Body className={toastVariant === "danger" ? "text-white" : ""}>
             {toastMessage}
           </Toast.Body>
         </Toast>
